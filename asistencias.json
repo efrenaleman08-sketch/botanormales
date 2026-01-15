@@ -1,0 +1,44 @@
+{
+  "-1003555102531": {
+    "faltas": {},
+    "historial": [],
+    "guerra_actual": {
+      "id": "09-01-2026",
+      "presentes": [
+        {
+          "nombre": "jefersonmurilo_silvest",
+          "userId": 8355207385
+        },
+        {
+          "nombre": "Fabricio Ortega",
+          "userId": 8590926231
+        },
+        {
+          "nombre": "Augustojonas_dantashol",
+          "userId": 6806273725
+        },
+        {
+          "nombre": "Douglasadriano_galloro",
+          "userId": 8268172154
+        },
+        {
+          "nombre": "elkoki_bedd",
+          "userId": 8286713959
+        },
+        {
+          "nombre": "Gustavovinicio_marino",
+          "userId": 6690866836
+        },
+        {
+          "nombre": "Aleman_Vzla",
+          "userId": 6912929677
+        },
+        {
+          "nombre": "Sr_Shifu",
+          "userId": 7944325636
+        }
+      ],
+      "fecha": "2026-01-12T19:57:05.591Z"
+    }
+  }
+}

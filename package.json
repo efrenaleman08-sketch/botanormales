@@ -1,0 +1,25 @@
+{
+  "name": "bot-telegram-guerras-familia",
+  "version": "1.0.0",
+  "description": "Bot de Telegram para gestionar listas de jugadores en guerras de familia",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "nodemon bot.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "nodejs"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "telegraf": "^4.15.0",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
+
