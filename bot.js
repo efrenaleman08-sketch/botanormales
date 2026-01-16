@@ -1,12 +1,15 @@
 const { Telegraf } = require('telegraf');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
 
-// Cargar variables de entorno
-const result = dotenv.config();
-if (result.error) {
-    console.error('Error al cargar .env:', result.error);
+// Cargar variables de entorno solo si existe .env (en Render se usan env vars)
+if (fsSync.existsSync(path.join(process.cwd(), '.env'))) {
+    const result = dotenv.config();
+    if (result.error) {
+        console.error('Error al cargar .env:', result.error);
+    }
 }
 
 // Archivos
@@ -193,7 +196,8 @@ function obtenerNombreDesdeCtx(ctx, texto) {
 
 // Verificar token antes de crear el bot
 if (!process.env.TELEGRAM_BOT_TOKEN) {
-    console.error('❌ No se encontró TELEGRAM_BOT_TOKEN. Crea un archivo .env con tu token.');
+    console.error('❌ No se encontró TELEGRAM_BOT_TOKEN.');
+    console.error('Configura TELEGRAM_BOT_TOKEN en variables de entorno (Render) o crea un archivo .env.');
     console.error('Directorio actual:', process.cwd());
     process.exit(1);
 }
