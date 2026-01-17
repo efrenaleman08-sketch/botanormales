@@ -21,9 +21,12 @@ const ATTENDANCE_FILE = 'asistencias.json';
 // Máximo de miembros permitidos
 const MAX_MIEMBROS = 70;
 const ASISTENCIA_INICIO_MIN = 20 * 60; // 20:00 Venezuela
-const ASISTENCIA_FIN_MIN = 22 * 60 + 10; // 22:10 Venezuela
+const ASISTENCIA_FIN_MIN = 22 * 60 + 20; // 22:20 Venezuela
 const ASSISTENCIA_TOPIC_ID = process.env.ASISTENCIA_TOPIC_ID
     ? Number(process.env.ASISTENCIA_TOPIC_ID)
+    : null;
+const ASSISTENCIA_CHAT_ID = process.env.ASISTENCIA_CHAT_ID
+    ? String(process.env.ASISTENCIA_CHAT_ID)
     : null;
 const BIBLIA_TOPIC_ID = process.env.BIBLIA_TOPIC_ID
     ? Number(process.env.BIBLIA_TOPIC_ID)
@@ -159,6 +162,45 @@ function asistenciaHorarioAbierto(date = new Date()) {
     return minutos >= ASISTENCIA_INICIO_MIN && minutos <= ASISTENCIA_FIN_MIN;
 }
 
+async function autoCerrarAsistencia() {
+    const minutos = getVzMinutes();
+    if (minutos < ASISTENCIA_FIN_MIN) return;
+
+    const diaVz = getVzDateId();
+    const asistencias = await loadAsistencias();
+    const chatIds = new Set(Object.keys(asistencias));
+    if (ASSISTENCIA_CHAT_ID) {
+        chatIds.add(ASSISTENCIA_CHAT_ID);
+    }
+
+    let changed = false;
+    for (const chatId of chatIds) {
+        const registro = ensureAsistencia(chatId, asistencias);
+        if (registro.control_asistencia.dia !== diaVz) {
+            continue;
+        }
+        if (!registro.control_asistencia.abierta) {
+            continue;
+        }
+        registro.control_asistencia.abierta = false;
+        changed = true;
+        const mensaje = '🛑 Asistencia cerrada automáticamente (22:20 VZ).';
+        try {
+            if (ASSISTENCIA_TOPIC_ID) {
+                await bot.telegram.sendMessage(chatId, mensaje, { message_thread_id: ASSISTENCIA_TOPIC_ID });
+            } else {
+                await bot.telegram.sendMessage(chatId, mensaje);
+            }
+        } catch (error) {
+            console.error('Error al cerrar asistencia automática:', error);
+        }
+    }
+
+    if (changed) {
+        await saveAsistencias(asistencias);
+    }
+}
+
 function isAsistenciaTopic(ctx) {
     if (!ASSISTENCIA_TOPIC_ID) return true;
     const threadId = ctx?.message?.message_thread_id;
@@ -169,6 +211,43 @@ function isBibliaTopic(ctx) {
     if (!BIBLIA_TOPIC_ID) return true;
     const threadId = ctx?.message?.message_thread_id;
     return Number(threadId) === BIBLIA_TOPIC_ID;
+}
+
+async function autoAbrirAsistencia() {
+    if (!asistenciaHorarioAbierto()) return;
+
+    const diaVz = getVzDateId();
+    const asistencias = await loadAsistencias();
+    const chatIds = new Set(Object.keys(asistencias));
+    if (ASSISTENCIA_CHAT_ID) {
+        chatIds.add(ASSISTENCIA_CHAT_ID);
+    }
+
+    let changed = false;
+    for (const chatId of chatIds) {
+        const registro = ensureAsistencia(chatId, asistencias);
+        if (registro.control_asistencia.dia === diaVz) {
+            continue;
+        }
+        registro.control_asistencia.abierta = true;
+        registro.control_asistencia.dia = diaVz;
+        changed = true;
+
+        const mensaje = '✅ Asistencia abierta automáticamente. Puedes usar /asistir.';
+        try {
+            if (ASSISTENCIA_TOPIC_ID) {
+                await bot.telegram.sendMessage(chatId, mensaje, { message_thread_id: ASSISTENCIA_TOPIC_ID });
+            } else {
+                await bot.telegram.sendMessage(chatId, mensaje);
+            }
+        } catch (error) {
+            console.error('Error al abrir asistencia automática:', error);
+        }
+    }
+
+    if (changed) {
+        await saveAsistencias(asistencias);
+    }
 }
 
 function getTopicLink(ctx, topicId) {
@@ -1385,3 +1464,10 @@ http.createServer((req, res) => {
 }).listen(PORT, () => {
     console.log(`🌐 Web server escuchando en puerto ${PORT}`);
 });
+
+// Apertura automática de asistencia (20:00 VZ)
+autoAbrirAsistencia().catch(err => console.error('Error en apertura automática:', err));
+setInterval(() => {
+    autoAbrirAsistencia().catch(err => console.error('Error en apertura automática:', err));
+    autoCerrarAsistencia().catch(err => console.error('Error en cierre automático:', err));
+}, 60 * 1000);
