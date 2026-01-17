@@ -22,6 +22,9 @@ const ATTENDANCE_FILE = 'asistencias.json';
 const MAX_MIEMBROS = 70;
 const ASISTENCIA_INICIO_MIN = 20 * 60; // 20:00 Venezuela
 const ASISTENCIA_FIN_MIN = 22 * 60 + 10; // 22:10 Venezuela
+const ASSISTENCIA_TOPIC_ID = process.env.ASISTENCIA_TOPIC_ID
+    ? Number(process.env.ASISTENCIA_TOPIC_ID)
+    : null;
 
 // Reglas Biblia RP (códigos -> descripción)
 const BIBLIA_RULES = {
@@ -151,6 +154,12 @@ function getVzMinutes(date = new Date()) {
 function asistenciaHorarioAbierto(date = new Date()) {
     const minutos = getVzMinutes(date);
     return minutos >= ASISTENCIA_INICIO_MIN && minutos <= ASISTENCIA_FIN_MIN;
+}
+
+function isAsistenciaTopic(ctx) {
+    if (!ASSISTENCIA_TOPIC_ID) return true;
+    const threadId = ctx?.message?.message_thread_id;
+    return Number(threadId) === ASSISTENCIA_TOPIC_ID;
 }
 
 // Cargar datos guardados
@@ -720,6 +729,10 @@ bot.command('contar', async (ctx) => {
 // Comando /abrir_asistencia - abre asistencia diaria (solo admin)
 bot.command('abrir_asistencia', async (ctx) => {
     if (!requireAdmin(ctx)) return;
+    if (!isAsistenciaTopic(ctx)) {
+        await ctx.reply('❌ La asistencia solo se maneja en el topic de asistencia.');
+        return;
+    }
     const chatId = String(ctx.chat.id);
     const asistencias = await loadAsistencias();
     const registro = ensureAsistencia(chatId, asistencias);
@@ -744,6 +757,10 @@ bot.command('abrir_asistencia', async (ctx) => {
 // Comando /cerrar_asistencia - cierra asistencia diaria (solo admin)
 bot.command('cerrar_asistencia', async (ctx) => {
     if (!requireAdmin(ctx)) return;
+    if (!isAsistenciaTopic(ctx)) {
+        await ctx.reply('❌ La asistencia solo se maneja en el topic de asistencia.');
+        return;
+    }
     const chatId = String(ctx.chat.id);
     const asistencias = await loadAsistencias();
     const registro = ensureAsistencia(chatId, asistencias);
@@ -753,11 +770,27 @@ bot.command('cerrar_asistencia', async (ctx) => {
     await ctx.reply('✅ Asistencia cerrada.');
 });
 
+// Comando /topic_id - muestra el ID del topic actual (solo admin)
+bot.command('topic_id', async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const threadId = ctx?.message?.message_thread_id;
+    if (!threadId) {
+        await ctx.reply('❌ Este comando debe usarse dentro de un topic.');
+        return;
+    }
+    await ctx.reply(`🧵 ID del topic: ${threadId}`);
+});
+
 // Comando /asistir - marca asistencia para la guerra actual
 bot.command('asistir', async (ctx) => {
     const chatId = String(ctx.chat.id);
     const data = await loadData();
     const asistencias = await loadAsistencias();
+
+    if (!isAsistenciaTopic(ctx)) {
+        await ctx.reply('❌ Debes usar este comando en el topic de asistencia a guerra.');
+        return;
+    }
 
     if (!data[chatId] || !data[chatId].guerra_actual) {
         await ctx.reply('❌ No hay una guerra activa. Usa /nueva_guerra primero.');
