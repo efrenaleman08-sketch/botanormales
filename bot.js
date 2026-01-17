@@ -25,6 +25,9 @@ const ASISTENCIA_FIN_MIN = 22 * 60 + 10; // 22:10 Venezuela
 const ASSISTENCIA_TOPIC_ID = process.env.ASISTENCIA_TOPIC_ID
     ? Number(process.env.ASISTENCIA_TOPIC_ID)
     : null;
+const BIBLIA_TOPIC_ID = process.env.BIBLIA_TOPIC_ID
+    ? Number(process.env.BIBLIA_TOPIC_ID)
+    : null;
 
 // Reglas Biblia RP (códigos -> descripción)
 const BIBLIA_RULES = {
@@ -160,6 +163,21 @@ function isAsistenciaTopic(ctx) {
     if (!ASSISTENCIA_TOPIC_ID) return true;
     const threadId = ctx?.message?.message_thread_id;
     return Number(threadId) === ASSISTENCIA_TOPIC_ID;
+}
+
+function isBibliaTopic(ctx) {
+    if (!BIBLIA_TOPIC_ID) return true;
+    const threadId = ctx?.message?.message_thread_id;
+    return Number(threadId) === BIBLIA_TOPIC_ID;
+}
+
+function getTopicLink(ctx, topicId) {
+    const chatId = ctx?.chat?.id;
+    if (!chatId || !topicId) return null;
+    const idStr = String(chatId);
+    if (!idStr.startsWith('-100')) return null;
+    const baseId = idStr.slice(4);
+    return `https://t.me/c/${baseId}/${topicId}`;
 }
 
 // Cargar datos guardados
@@ -781,6 +799,30 @@ bot.command('topic_id', async (ctx) => {
     await ctx.reply(`🧵 ID del topic: ${threadId}`);
 });
 
+// En el topic de asistencia, solo permitir comandos específicos
+bot.on('message', async (ctx, next) => {
+    if (!isAsistenciaTopic(ctx)) {
+        return next();
+    }
+
+    const text = ctx?.message?.text;
+    if (!text) {
+        return next();
+    }
+
+    const allowed = ['/asistir', '/abrir_asistencia', '/cerrar_asistencia', '/reporte_asistencia', '/cerrar_guerra', '/topic_id'];
+    const cmd = text.trim().split(/\s+/)[0];
+    if (allowed.includes(cmd)) {
+        return next();
+    }
+
+    try {
+        await ctx.deleteMessage();
+    } catch (error) {
+        console.error('Error al borrar mensaje fuera de comandos:', error);
+    }
+});
+
 // Comando /asistir - marca asistencia para la guerra actual
 bot.command('asistir', async (ctx) => {
     const chatId = String(ctx.chat.id);
@@ -788,7 +830,11 @@ bot.command('asistir', async (ctx) => {
     const asistencias = await loadAsistencias();
 
     if (!isAsistenciaTopic(ctx)) {
-        await ctx.reply('❌ Debes usar este comando en el topic de asistencia a guerra.');
+        const link = getTopicLink(ctx, ASSISTENCIA_TOPIC_ID);
+        const mensaje = link
+            ? `❌ Debes usar este comando en el topic de asistencia a guerra.\n👉 ${link}`
+            : '❌ Debes usar este comando en el topic de asistencia a guerra.';
+        await ctx.reply(mensaje);
         return;
     }
 
@@ -987,6 +1033,10 @@ bot.command('faltas', async (ctx) => {
 
 // Comando /biblia: lista todas o busca regla por código (accesible a todos)
 bot.command(['biblia', 'Biblia'], async (ctx) => {
+    if (!isBibliaTopic(ctx)) {
+        await ctx.reply('❌ Este comando solo se usa en el topic de biblia RP.');
+        return;
+    }
     const args = ctx.message.text.split(' ').slice(1);
     const code = (args[0] || '').toUpperCase();
 
@@ -1016,16 +1066,28 @@ bot.command(['biblia', 'Biblia'], async (ctx) => {
 
 // Comando /reglas_secuestro o /secuestro - accesible a todos
 bot.command(['reglas_secuestro', 'Reglas_secuestro', 'REGLAS_SEQUESTRO', 'reglas_sequestro', 'secuestro', 'Secuestro'], async (ctx) => {
+    if (!isBibliaTopic(ctx)) {
+        await ctx.reply('❌ Este comando solo se usa en el topic de biblia RP.');
+        return;
+    }
     await ctx.reply(REGLAS_SECUESTRO);
 });
 
 // Comando /cargamentos - accesible a todos
 bot.command(['cargamentos', 'Cargamentos'], async (ctx) => {
+    if (!isBibliaTopic(ctx)) {
+        await ctx.reply('❌ Este comando solo se usa en el topic de biblia RP.');
+        return;
+    }
     await ctx.reply(REGLAS_CARGAMENTOS);
 });
 
 // Comando /robos - accesible a todos
 bot.command(['robos', 'Robos'], async (ctx) => {
+    if (!isBibliaTopic(ctx)) {
+        await ctx.reply('❌ Este comando solo se usa en el topic de biblia RP.');
+        return;
+    }
     await ctx.reply(REGLAS_ROBOS);
 });
 
