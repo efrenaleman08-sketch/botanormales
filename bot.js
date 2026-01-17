@@ -183,6 +183,10 @@ function normalizePresentes(presentes) {
     });
 }
 
+function nombreMatch(a, b) {
+    return String(a || '').toLowerCase() === String(b || '').toLowerCase();
+}
+
 // Obtiene un nombre a registrar desde el texto o desde el usuario de Telegram
 function obtenerNombreDesdeCtx(ctx, texto) {
     const nombreLimpio = texto ? texto.trim() : '';
@@ -192,6 +196,13 @@ function obtenerNombreDesdeCtx(ctx, texto) {
     if (user.username) return user.username;
     if (user.first_name || user.last_name) return [user.first_name, user.last_name].filter(Boolean).join(' ');
     return 'Desconocido';
+}
+
+async function esMiembroBase(nombre) {
+    const base = await loadMiembrosBase();
+    const miembros = base.miembros || [];
+    const nombreNorm = String(nombre || '').toLowerCase();
+    return miembros.some(m => String(m.nombre || '').toLowerCase() === nombreNorm);
 }
 
 // Verificar token antes de crear el bot
@@ -689,6 +700,24 @@ bot.command('asistir', async (ctx) => {
     const nombreArg = ctx.message.text.split(' ').slice(1).join(' ');
     const nombre = obtenerNombreDesdeCtx(ctx, nombreArg);
     const userId = ctx.from ? ctx.from.id : null;
+
+    // Solo miembros registrados pueden marcar asistencia
+    if (!(await esMiembroBase(nombre))) {
+        await ctx.reply('❌ No estás en la base de miembros. Pídele a un admin que te agregue antes de asistir.');
+        return;
+    }
+
+    // Solo una asistencia por día (por guerra ID)
+    const historialHoy = (registro.historial || []).find(h => h.id === guerra.id);
+    if (historialHoy) {
+        const presentesHoy = (historialHoy.presentes || []).map(p => String(p));
+        const ausentesHoy = (historialHoy.ausentes || []).map(a => String(a));
+        const yaPorNombre = presentesHoy.some(p => nombreMatch(p, nombre)) || ausentesHoy.some(a => nombreMatch(a, nombre));
+        if (yaPorNombre) {
+            await ctx.reply('⚠️ Ya registraste asistencia hoy.');
+            return;
+        }
+    }
 
     // Evitar doble marca por usuario de Telegram
     const yaPorUsuario = userId
