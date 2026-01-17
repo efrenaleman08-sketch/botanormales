@@ -307,7 +307,8 @@ function ensureAsistencia(chatId, asistencias) {
             faltas: {},
             historial: [],
             guerra_actual: null,
-            control_asistencia: { abierta: false, dia: null }
+            control_asistencia: { abierta: false, dia: null },
+            usuarios: {}
         };
     } else {
         if (!asistencias[chatId].faltas) asistencias[chatId].faltas = {};
@@ -317,6 +318,9 @@ function ensureAsistencia(chatId, asistencias) {
         }
         if (!asistencias[chatId].control_asistencia) {
             asistencias[chatId].control_asistencia = { abierta: false, dia: null };
+        }
+        if (!asistencias[chatId].usuarios) {
+            asistencias[chatId].usuarios = {};
         }
     }
     return asistencias[chatId];
@@ -383,6 +387,8 @@ function helpMessage(ctx) {
 /abrir_asistencia - Abre asistencia (8:00 p.m. a 10:10 p.m. VZ)
 /cerrar_asistencia - Cierra asistencia
 /asistir <nombre> - Marca asistencia a la guerra actual
+/mi_nombre - Muestra tu nombre guardado
+/cambiar_nombre <nombre> - Actualiza tu nombre guardado
 /reporte_asistencia - Muestra presentes y pendientes
 /cerrar_guerra - Cierra la guerra y marca ausentes
 /faltas - Faltas acumuladas (2 faltas = expulsión)
@@ -399,6 +405,8 @@ function helpMessage(ctx) {
 *Comandos (jugador):*
 /help - Ver ayuda (este menú)
 /asistir <nombre> - Marca asistencia a la guerra actual
+/mi_nombre - Muestra tu nombre guardado
+/cambiar_nombre <nombre> - Actualiza tu nombre guardado
 /biblia <código> - Ver reglas (ej: /biblia VDM)
 /reglas_secuestro | /secuestro - Ver reglas de secuestro
 /cargamentos - Reglas de cargamentos (materiales/guaraná)
@@ -867,6 +875,48 @@ bot.command('cerrar_asistencia', async (ctx) => {
     await ctx.reply('✅ Asistencia cerrada.');
 });
 
+// Comando /mi_nombre - muestra el nombre guardado
+bot.command('mi_nombre', async (ctx) => {
+    const chatId = String(ctx.chat.id);
+    const asistencias = await loadAsistencias();
+    const registro = ensureAsistencia(chatId, asistencias);
+    const userId = ctx.from ? ctx.from.id : null;
+    if (!userId) {
+        await ctx.reply('❌ No pude obtener tu usuario de Telegram.');
+        return;
+    }
+    const nombre = registro.usuarios?.[String(userId)];
+    if (!nombre) {
+        await ctx.reply('⚠️ Aún no tengo tu nombre guardado. Usa: /asistir <nombre>.');
+        return;
+    }
+    await ctx.reply(`✅ Tu nombre guardado es: ${nombre}`);
+});
+
+// Comando /cambiar_nombre - actualiza el nombre guardado
+bot.command('cambiar_nombre', async (ctx) => {
+    const chatId = String(ctx.chat.id);
+    const asistencias = await loadAsistencias();
+    const registro = ensureAsistencia(chatId, asistencias);
+    const userId = ctx.from ? ctx.from.id : null;
+    const nombreArg = ctx.message.text.split(' ').slice(1).join(' ').trim();
+    if (!userId) {
+        await ctx.reply('❌ No pude obtener tu usuario de Telegram.');
+        return;
+    }
+    if (!nombreArg) {
+        await ctx.reply('❌ Usa: /cambiar_nombre <nombre>');
+        return;
+    }
+    if (!(await esMiembroBase(nombreArg))) {
+        await ctx.reply('❌ Ese nombre no está en la base de miembros.');
+        return;
+    }
+    registro.usuarios[String(userId)] = nombreArg;
+    await saveAsistencias(asistencias);
+    await ctx.reply(`✅ Nombre actualizado: ${nombreArg}`);
+});
+
 // Comando /topic_id - muestra el ID del topic actual (solo admin)
 bot.command('topic_id', async (ctx) => {
     if (!requireAdmin(ctx)) return;
@@ -889,7 +939,10 @@ bot.on('message', async (ctx, next) => {
         return next();
     }
 
-    const allowed = ['/asistir', '/abrir_asistencia', '/cerrar_asistencia', '/reporte_asistencia', '/cerrar_guerra', '/topic_id'];
+    const allowed = ['/asistir'];
+    if (isAdmin(ctx)) {
+        allowed.push('/abrir_asistencia', '/cerrar_asistencia', '/reporte_asistencia', '/cerrar_guerra', '/faltas', '/contar', '/topic_id');
+    }
     const cmd = text.trim().split(/\s+/)[0];
     if (allowed.includes(cmd)) {
         return next();
@@ -946,9 +999,19 @@ bot.command('asistir', async (ctx) => {
     // Normalizar presentes para que siempre sean objetos { nombre, userId }
     registro.guerra_actual.presentes = normalizePresentes(registro.guerra_actual.presentes);
 
-    const nombreArg = ctx.message.text.split(' ').slice(1).join(' ');
-    const nombre = obtenerNombreDesdeCtx(ctx, nombreArg);
+    const nombreArg = ctx.message.text.split(' ').slice(1).join(' ').trim();
+    let nombre = obtenerNombreDesdeCtx(ctx, nombreArg);
     const userId = ctx.from ? ctx.from.id : null;
+
+    if (!nombreArg) {
+        const guardado = userId ? registro.usuarios?.[String(userId)] : null;
+        if (guardado) {
+            nombre = guardado;
+        } else {
+            await ctx.reply('❌ No tengo tu nombre guardado. Usa: /asistir <nombre> la primera vez.');
+            return;
+        }
+    }
 
     // Solo miembros registrados pueden marcar asistencia
     if (!(await esMiembroBase(nombre))) {
@@ -985,6 +1048,10 @@ bot.command('asistir', async (ctx) => {
     }
 
     registro.guerra_actual.presentes.push({ nombre, userId });
+    // Guardar mapeo usuario->nombre solo si la asistencia fue exitosa
+    if (userId) {
+        registro.usuarios[String(userId)] = nombre;
+    }
     await saveAsistencias(asistencias);
 
     const totalPresentes = registro.guerra_actual.presentes.length;
