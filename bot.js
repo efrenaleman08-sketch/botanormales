@@ -202,7 +202,7 @@ async function autoCerrarAsistencia() {
 }
 
 function isAsistenciaTopic(ctx) {
-    if (!ASSISTENCIA_TOPIC_ID) return true;
+    if (!ASSISTENCIA_TOPIC_ID) return false;
     const threadId = ctx?.message?.message_thread_id;
     return Number(threadId) === ASSISTENCIA_TOPIC_ID;
 }
@@ -880,7 +880,7 @@ bot.command('topic_id', async (ctx) => {
 
 // En el topic de asistencia, solo permitir comandos específicos
 bot.on('message', async (ctx, next) => {
-    if (!isAsistenciaTopic(ctx)) {
+    if (!ASSISTENCIA_TOPIC_ID || !isAsistenciaTopic(ctx)) {
         return next();
     }
 
