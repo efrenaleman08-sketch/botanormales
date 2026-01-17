@@ -20,6 +20,8 @@ const ATTENDANCE_FILE = 'asistencias.json';
 
 // Máximo de miembros permitidos
 const MAX_MIEMBROS = 70;
+const ASISTENCIA_INICIO_MIN = 20 * 60; // 20:00 Venezuela
+const ASISTENCIA_FIN_MIN = 22 * 60 + 10; // 22:10 Venezuela
 
 // Reglas Biblia RP (códigos -> descripción)
 const BIBLIA_RULES = {
@@ -115,6 +117,42 @@ function formatDateId(date = new Date()) {
     return `${d}-${m}-${y}`;
 }
 
+function getVzDateParts(date = new Date()) {
+    const formatter = new Intl.DateTimeFormat('es-VE', {
+        timeZone: 'America/Caracas',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    });
+    const parts = formatter.formatToParts(date);
+    const get = (type) => parts.find(p => p.type === type)?.value || '';
+    return {
+        day: get('day'),
+        month: get('month'),
+        year: get('year'),
+        hour: get('hour'),
+        minute: get('minute')
+    };
+}
+
+function getVzDateId(date = new Date()) {
+    const { day, month, year } = getVzDateParts(date);
+    return `${day}-${month}-${year}`;
+}
+
+function getVzMinutes(date = new Date()) {
+    const { hour, minute } = getVzDateParts(date);
+    return Number(hour) * 60 + Number(minute);
+}
+
+function asistenciaHorarioAbierto(date = new Date()) {
+    const minutos = getVzMinutes(date);
+    return minutos >= ASISTENCIA_INICIO_MIN && minutos <= ASISTENCIA_FIN_MIN;
+}
+
 // Cargar datos guardados
 async function loadData() {
     try {
@@ -162,13 +200,17 @@ function ensureAsistencia(chatId, asistencias) {
         asistencias[chatId] = {
             faltas: {},
             historial: [],
-            guerra_actual: null
+            guerra_actual: null,
+            control_asistencia: { abierta: false, dia: null }
         };
     } else {
         if (!asistencias[chatId].faltas) asistencias[chatId].faltas = {};
         if (!asistencias[chatId].historial) asistencias[chatId].historial = [];
         if (!Object.prototype.hasOwnProperty.call(asistencias[chatId], 'guerra_actual')) {
             asistencias[chatId].guerra_actual = null;
+        }
+        if (!asistencias[chatId].control_asistencia) {
+            asistencias[chatId].control_asistencia = { abierta: false, dia: null };
         }
     }
     return asistencias[chatId];
@@ -232,6 +274,8 @@ function helpMessage(ctx) {
 /limpiar - Limpia la lista actual
 /exportar - Exporta la lista en formato para copiar
 /contar - Muestra cuántos jugadores hay en la lista
+/abrir_asistencia - Abre asistencia (8:00 p.m. a 10:10 p.m. VZ)
+/cerrar_asistencia - Cierra asistencia
 /asistir <nombre> - Marca asistencia a la guerra actual
 /reporte_asistencia - Muestra presentes y pendientes
 /cerrar_guerra - Cierra la guerra y marca ausentes
@@ -673,6 +717,42 @@ bot.command('contar', async (ctx) => {
     await ctx.reply(mensaje);
 });
 
+// Comando /abrir_asistencia - abre asistencia diaria (solo admin)
+bot.command('abrir_asistencia', async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const chatId = String(ctx.chat.id);
+    const asistencias = await loadAsistencias();
+    const registro = ensureAsistencia(chatId, asistencias);
+
+    const diaVz = getVzDateId();
+    if (registro.control_asistencia.dia === diaVz) {
+        await ctx.reply('⚠️ La asistencia de hoy ya fue abierta. Solo se puede abrir una vez por día.');
+        return;
+    }
+
+    if (!asistenciaHorarioAbierto()) {
+        await ctx.reply('⏰ La asistencia solo se abre de 8:00 p.m. a 10:10 p.m. (hora Venezuela).');
+        return;
+    }
+
+    registro.control_asistencia.abierta = true;
+    registro.control_asistencia.dia = diaVz;
+    await saveAsistencias(asistencias);
+    await ctx.reply('✅ Asistencia abierta. Puedes usar /asistir.');
+});
+
+// Comando /cerrar_asistencia - cierra asistencia diaria (solo admin)
+bot.command('cerrar_asistencia', async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const chatId = String(ctx.chat.id);
+    const asistencias = await loadAsistencias();
+    const registro = ensureAsistencia(chatId, asistencias);
+
+    registro.control_asistencia.abierta = false;
+    await saveAsistencias(asistencias);
+    await ctx.reply('✅ Asistencia cerrada.');
+});
+
 // Comando /asistir - marca asistencia para la guerra actual
 bot.command('asistir', async (ctx) => {
     const chatId = String(ctx.chat.id);
@@ -686,6 +766,16 @@ bot.command('asistir', async (ctx) => {
 
     const guerra = data[chatId].guerra_actual;
     const registro = ensureAsistencia(chatId, asistencias);
+
+    const diaVz = getVzDateId();
+    if (!registro.control_asistencia.abierta || registro.control_asistencia.dia !== diaVz) {
+        await ctx.reply('⏰ La asistencia aún no está abierta. Se abre de 8:00 p.m. a 10:10 p.m. (hora Venezuela).');
+        return;
+    }
+    if (!asistenciaHorarioAbierto()) {
+        await ctx.reply('⏰ La asistencia está fuera de horario (8:00 p.m. a 10:10 p.m., hora Venezuela).');
+        return;
+    }
 
     if (!registro.guerra_actual || registro.guerra_actual.id !== guerra.id) {
         registro.guerra_actual = {
