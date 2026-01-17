@@ -1,6 +1,7 @@
 const { Telegraf } = require('telegraf');
 const fs = require('fs').promises;
 const fsSync = require('fs');
+const http = require('http');
 const path = require('path');
 const dotenv = require('dotenv');
 
@@ -1191,3 +1192,11 @@ bot.launch();
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
+// Render Web Service requiere un puerto abierto
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('OK');
+}).listen(PORT, () => {
+    console.log(`🌐 Web server escuchando en puerto ${PORT}`);
+});
