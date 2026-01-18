@@ -31,6 +31,9 @@ const ASSISTENCIA_CHAT_ID = process.env.ASISTENCIA_CHAT_ID
 const BIBLIA_TOPIC_ID = process.env.BIBLIA_TOPIC_ID
     ? Number(process.env.BIBLIA_TOPIC_ID)
     : null;
+const NOTIF_TOPIC_ID = process.env.NOTIF_TOPIC_ID
+    ? Number(process.env.NOTIF_TOPIC_ID)
+    : null;
 
 // Reglas Biblia RP (códigos -> descripción)
 const BIBLIA_RULES = {
@@ -213,6 +216,12 @@ function isBibliaTopic(ctx) {
     return Number(threadId) === BIBLIA_TOPIC_ID;
 }
 
+function isNotifTopic(ctx) {
+    if (!NOTIF_TOPIC_ID) return true;
+    const threadId = ctx?.message?.message_thread_id;
+    return Number(threadId) === NOTIF_TOPIC_ID;
+}
+
 async function autoAbrirAsistencia() {
     if (!asistenciaHorarioAbierto()) return;
 
@@ -389,6 +398,7 @@ function helpMessage(ctx) {
 /asistir <nombre> - Marca asistencia a la guerra actual
 /mi_nombre - Muestra tu nombre guardado
 /cambiar_nombre <nombre> - Actualiza tu nombre guardado
+/notificar <mensaje> - Enviar notificación al topic de avisos
 /reporte_asistencia - Muestra presentes y pendientes
 /cerrar_guerra - Cierra la guerra y marca ausentes
 /faltas - Faltas acumuladas (2 faltas = expulsión)
@@ -917,6 +927,25 @@ bot.command('cambiar_nombre', async (ctx) => {
     await ctx.reply(`✅ Nombre actualizado: ${nombreArg}`);
 });
 
+// Comando /notificar - enviar notificación al topic de avisos (solo admin)
+bot.command('notificar', async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    const mensaje = ctx.message.text.split(' ').slice(1).join(' ').trim();
+    if (!mensaje) {
+        await ctx.reply('❌ Usa: /notificar <mensaje>');
+        return;
+    }
+    if (!isNotifTopic(ctx)) {
+        const link = getTopicLink(ctx, NOTIF_TOPIC_ID);
+        const aviso = link
+            ? `❌ Este comando solo se usa en el topic de notificaciones.\n👉 ${link}`
+            : '❌ Este comando solo se usa en el topic de notificaciones.';
+        await ctx.reply(aviso);
+        return;
+    }
+    await ctx.reply(`📣 ${mensaje}`);
+});
+
 // Comando /topic_id - muestra el ID del topic actual (solo admin)
 bot.command('topic_id', async (ctx) => {
     if (!requireAdmin(ctx)) return;
@@ -940,7 +969,7 @@ bot.on('message', async (ctx, next) => {
     }
 
     const allowed = ['/asistir'];
-    if (isAdmin(ctx)) {
+    if (esAdmin(ctx)) {
         allowed.push('/abrir_asistencia', '/cerrar_asistencia', '/reporte_asistencia', '/cerrar_guerra', '/faltas', '/contar', '/topic_id');
     }
     const cmd = text.trim().split(/\s+/)[0];
