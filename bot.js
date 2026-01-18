@@ -349,6 +349,10 @@ function nombreMatch(a, b) {
     return String(a || '').toLowerCase() === String(b || '').toLowerCase();
 }
 
+function normalizeNombre(nombre) {
+    return String(nombre || '').trim().toLowerCase();
+}
+
 // Obtiene un nombre a registrar desde el texto o desde el usuario de Telegram
 function obtenerNombreDesdeCtx(ctx, texto) {
     const nombreLimpio = texto ? texto.trim() : '';
@@ -363,8 +367,16 @@ function obtenerNombreDesdeCtx(ctx, texto) {
 async function esMiembroBase(nombre) {
     const base = await loadMiembrosBase();
     const miembros = base.miembros || [];
-    const nombreNorm = String(nombre || '').toLowerCase();
-    return miembros.some(m => String(m.nombre || '').toLowerCase() === nombreNorm);
+    const nombreNorm = normalizeNombre(nombre);
+    return miembros.some(m => normalizeNombre(m.nombre) === nombreNorm);
+}
+
+async function getNombreCanonical(nombre) {
+    const base = await loadMiembrosBase();
+    const miembros = base.miembros || [];
+    const nombreNorm = normalizeNombre(nombre);
+    const match = miembros.find(m => normalizeNombre(m.nombre) === nombreNorm);
+    return match ? match.nombre : null;
 }
 
 // Verificar token antes de crear el bot
@@ -885,6 +897,48 @@ bot.command('cerrar_asistencia', async (ctx) => {
     await ctx.reply('✅ Asistencia cerrada.');
 });
 
+// Comando /limpiar_asistencia - normaliza y elimina duplicados de la guerra actual
+bot.command('limpiar_asistencia', async (ctx) => {
+    if (!requireAdmin(ctx)) return;
+    if (!isAsistenciaTopic(ctx)) {
+        await ctx.reply('❌ Este comando solo se usa en el topic de asistencia.');
+        return;
+    }
+    const chatId = String(ctx.chat.id);
+    const data = await loadData();
+    const asistencias = await loadAsistencias();
+
+    if (!data[chatId] || !data[chatId].guerra_actual) {
+        await ctx.reply('❌ No hay una guerra activa. Usa /nueva_guerra primero.');
+        return;
+    }
+
+    const guerra = data[chatId].guerra_actual;
+    const registro = ensureAsistencia(chatId, asistencias);
+
+    if (!registro.guerra_actual || registro.guerra_actual.id !== guerra.id) {
+        await ctx.reply('⚠️ No hay asistencia activa para la guerra actual.');
+        return;
+    }
+
+    const presentes = normalizePresentes(registro.guerra_actual.presentes);
+    const vistos = new Set();
+    const nuevos = [];
+    for (const p of presentes) {
+        const canonical = await getNombreCanonical(p.nombre);
+        if (!canonical) continue;
+        const key = normalizeNombre(canonical);
+        if (vistos.has(key)) continue;
+        vistos.add(key);
+        nuevos.push({ nombre: canonical, userId: p.userId ?? null });
+    }
+
+    const antes = presentes.length;
+    registro.guerra_actual.presentes = nuevos;
+    await saveAsistencias(asistencias);
+    await ctx.reply(`🧹 Asistencia limpiada. Antes: ${antes}, ahora: ${nuevos.length}.`);
+});
+
 // Comando /mi_nombre - muestra el nombre guardado
 bot.command('mi_nombre', async (ctx) => {
     const chatId = String(ctx.chat.id);
@@ -1047,6 +1101,10 @@ bot.command('asistir', async (ctx) => {
         await ctx.reply('❌ No estás en la base de miembros. Pídele a un admin que te agregue antes de asistir.');
         return;
     }
+    const canonical = await getNombreCanonical(nombre);
+    if (canonical) {
+        nombre = canonical;
+    }
 
     // Solo una asistencia por día (por guerra ID)
     const historialHoy = (registro.historial || []).find(h => h.id === guerra.id);
@@ -1070,7 +1128,7 @@ bot.command('asistir', async (ctx) => {
     }
 
     // Evitar duplicado por nombre exacto
-    const yaPorNombre = registro.guerra_actual.presentes.find(p => p.nombre === nombre);
+    const yaPorNombre = registro.guerra_actual.presentes.find(p => nombreMatch(p.nombre, nombre));
     if (yaPorNombre) {
         await ctx.reply(`⚠️ ${nombre} ya estaba marcado como asistido.`);
         return;
@@ -1104,9 +1162,9 @@ bot.command('reporte_asistencia', async (ctx) => {
     const presentes = (registro.guerra_actual && registro.guerra_actual.id === guerra.id)
         ? normalizePresentes(registro.guerra_actual.presentes)
         : [];
-    const nombresPresentes = presentes.map(p => p.nombre);
+    const nombresPresentes = presentes.map(p => normalizeNombre(p.nombre));
     const jugadores = guerra.jugadores || [];
-    const pendientes = jugadores.filter(j => !nombresPresentes.includes(j));
+    const pendientes = jugadores.filter(j => !nombresPresentes.includes(normalizeNombre(j)));
 
     let mensaje = `📋 Asistencia guerra ${guerra.id}\n`;
     mensaje += `Presentes: ${presentes.length}\n`;
